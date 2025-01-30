@@ -17,7 +17,7 @@ Below is the link of the google colab link where the model was trained with data
 1.  Clone the github repository and move into the directory
 
 ```
-git clone https://github.com/Luxxgit2k4/parking.git
+git clone --recurse-submodules -j8 https://github.com/Luxxgit2k4/parking.git
 cd parking
 ```
 
