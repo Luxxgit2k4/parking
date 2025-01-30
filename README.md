@@ -21,11 +21,6 @@ git clone --recurse-submodules -j8 https://github.com/Luxxgit2k4/parking.git
 cd parking
 ```
 
-2. Clone the yolov5 repository as the model runs with the help of it.
-
-```
-git clone https://github.com/ultralytics/yolov5.git
-```
 3. Install python directly from the site or using commands with the distro you use: ( I use Arch btw). And then install pyenv:
 
 ```
