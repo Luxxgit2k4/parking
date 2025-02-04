@@ -68,6 +68,22 @@ def connectDB() -> Any:
         logger.error(f"Error connecting to database: {e}")
         return None
 
+
+def cleardata():
+    conn = connectDB()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM slots;")
+            conn.commit()
+            cursor.close()
+            logger.info("Clearing database...")
+        except Exception as kumar:
+            logger.error(f"Error clearing the database: {kumar}")
+        finally:
+            conn.close()
+
+
 def cropROI(frame: np.ndarray) -> Tuple[np.ndarray, int]:
     height, width, _ = frame.shape
     roi = frame[int(height * 0.5):height, 0:width]
@@ -169,7 +185,9 @@ async def getParkingData() -> Dict:
     except Exception as e:
         return {"error": str(e)}
 
-
+Cleardata = True
 
 if __name__ == "__main__":
+    if Cleardata:
+        cleardata()
     uvicorn.run(app, host="127.0.0.1", port=8004)
