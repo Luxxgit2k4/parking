@@ -1,4 +1,5 @@
 import logging
+import warnings
 import sys
 import threading
 import cv2
@@ -36,6 +37,7 @@ model: Any = torch.hub.load(
     path=modelpath,
     source='local'
 )
+
 try:
     _ = model.names
 except AttributeError:
@@ -106,44 +108,45 @@ def processDetections(frame: np.ndarray, results: Any, threshold: float = 0.5) -
     return frame, output
 
 def parkingDetection(bgTasks: BackgroundTasks) -> None:
-    cap = cv2.VideoCapture(0)
-    cap.set(3, 640)
-    cap.set(4, 480)
-    logger.info("Started parking slot detection...")
-    start = time.time()
-    timeout = 30
-    parkData: Dict = {"Data": []}
-    while True:
-        success, frame = cap.read()
-        if not success:
-            logger.error("Failed to grab frame")
-            break
-        roiFrame, yOff = cropROI(frame)
-        rgbFrame = cv2.cvtColor(roiFrame, cv2.COLOR_BGR2RGB)
-        try:
-            results = model(rgbFrame)
-        except TypeError as e:
-            logger.error(f"Error during inference: {e}")
-            break
-        processed, parkData = processDetections(roiFrame, results)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=FutureWarning)
+        cap = cv2.VideoCapture(0)
+        cap.set(3, 640)
+        cap.set(4, 480)
+        logger.info("Started parking slot detection...")
+        start = time.time()
+        timeout = 30
+        parkData: Dict = {"Data": []}
+        while True:
+            success, frame = cap.read()
+            if not success:
+                logger.error("Failed to grab frame")
+                break
+            roiFrame, yOff = cropROI(frame)
+            rgbFrame = cv2.cvtColor(roiFrame, cv2.COLOR_BGR2RGB)
+            try:
+                results = model(rgbFrame)
+            except TypeError as e:
+                logger.error(f"Error during inference: {e}")
+                break
+            processed, parkData = processDetections(roiFrame, results)
+            if parkData["Data"]:
+                logger.info(f"Parking Data: {parkData}")
+            if time.time() - start > timeout:
+                logger.info("Stopping parking slot detection due to timeout...")
+                break
+        cap.release()
         if parkData["Data"]:
-            logger.info(f"Parking Data: {parkData}")
-        if time.time() - start > timeout:
-            logger.info("Stopping parking slot detection due to timeout...")
-            break
-    cap.release()
-    if parkData["Data"]:
-        conn = connectDB()
-        if conn:
-            cur = conn.cursor()
-            query = "INSERT INTO slots (slot_status) VALUES (%s)"
-            for status in parkData["Data"]:
-                cur.execute(query, (status,))
-            conn.commit()
-            cur.close()
-            conn.close()
-            logger.info("Parking data inserted into database.")
-
+            conn = connectDB()
+            if conn:
+                cur = conn.cursor()
+                query = "INSERT INTO slots (slot_status) VALUES (%s)"
+                for status in parkData["Data"]:
+                    cur.execute(query, (status,))
+                conn.commit()
+                cur.close()
+                conn.close()
+                logger.info("Parking data inserted into database.")
 @app.get("/parking")
 async def startParkingDetection(bgTasks: BackgroundTasks) -> Dict:
     bgTasks.add_task(parkingDetection, bgTasks)
