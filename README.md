@@ -79,9 +79,6 @@ source environment_name/bin/activate
 python --version
 ```
 
-- Deactivate the environment using:
 
-```
-deactivate
 ```
 
