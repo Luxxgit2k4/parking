@@ -1,4 +1,5 @@
 import cv2
+from cv2.gapi import video
 import torch
 import numpy as np
 from typing import Any
@@ -54,8 +55,8 @@ def process_detections(frame, results, confidence_threshold=0.3):
     }
 
     return frame, output
-
-cap = cv2.VideoCapture(0)
+url = "http://192.168.1.4:4747/video"
+cap = cv2.VideoCapture(url)
 
 if not cap.isOpened():
     print("Error: Unable to access the camera or video feed.")

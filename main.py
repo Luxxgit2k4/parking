@@ -16,22 +16,20 @@ from typing import Any, Dict
 load_dotenv()
 app = FastAPI()
 
-# Configure logger
-logger = logging.getLogger("logs")
+
+logger = logging.getLogger("logs") # idhu vandhu logging ku da
 logger.setLevel(logging.DEBUG)
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 logger.addHandler(handler)
 
-# Define paths for YOLOv5 and model
-path = os.path.dirname(os.path.abspath(__file__))
+path = os.path.dirname(os.path.abspath(__file__)) # dynamic path loader so nee path hardcode panna avasiyam ila
 yolov5path = os.path.join(path, 'yolov5')
 modelpath = os.path.join(path, 'model', 'best.pt')
 
 logger.info(f"Found Yolov5 at: {yolov5path}")
 logger.info(f"Found the model at: {modelpath}")
 
-# Load YOLOv5 model
 logger.info("Loading the model...")
 model: Any = torch.hub.load(
     yolov5path,
@@ -40,7 +38,7 @@ model: Any = torch.hub.load(
     source='local'
 )
 
-def connectDB() -> Any:
+def connectDB() -> Any:   #inga dhaan database connect panrom
     try:
         conn = psycopg2.connect(
             host=os.getenv("DB_HOST"),
@@ -53,56 +51,42 @@ def connectDB() -> Any:
         cur = conn.cursor()
         cur.execute("""
             CREATE TABLE IF NOT EXISTS slots (
-                slot_id SERIAL PRIMARY KEY,
-                slot_status BOOLEAN,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                slot_id VARCHAR(10) PRIMARY KEY,
+                slot_status BOOLEAN
             );
         """)
         logger.info("Table 'slots' created or already exists.")
-        return conn
+        return conn, cur
     except Exception as e:
         logger.error(f"Error connecting to database: {e}")
-        return None
+        return None, None
 
-def cleardata():
-    conn = connectDB()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("DELETE FROM slots;")  # Deletes all data in the slots table
-            conn.commit()
-            cur.close()
-            logger.info("Data cleared from 'slots' table.")
-        except Exception as e:
-            logger.error(f"Error while clearing data: {e}")
-        finally:
-            conn.close()
 
-# Check if the model is loaded correctly
+def generate_slot_mapping(rows, columns): # slot mapping da kanaa
+    slot_mapping = {}
+    for row in range(rows):
+        for col in range(columns):
+            slot_id = f"{chr(65 + row)}{str(col + 1).zfill(2)}"
+            slot_mapping[(row * columns) + col] = slot_id
+    return slot_mapping
+
 try:
     _ = model.names
 except AttributeError:
     logger.error("Error: Model does not have 'names' attribute. Check loading process.")
     exit()
 
-# Detection logic
-def process_detections(frame, results, confidence_threshold=0.3):
-    total_spaces = 0
+def process_detections(frame, results, confidence_threshold=0.2, slot_mapping=None):
+    total_spaces = 0   # threshold increase panna accuracy erum but leave it as it is
     filled_spaces = 0
     data = []
-
-    # Iterate over the detection results
     for result in results.xyxy[0]:
         x1, y1, x2, y2, confidence, cls = result.cpu().numpy()
-
-        # Skip detections below the confidence threshold
-        if confidence < confidence_threshold:
+        if confidence < confidence_threshold: # skips detection if threshold is less
             continue
 
         x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
         cls = int(cls)
-
-        # Determine slot status (empty or filled)
         if cls == 0:
             total_spaces += 1
             data.append(0)  # Empty space
@@ -120,7 +104,8 @@ def process_detections(frame, results, confidence_threshold=0.3):
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
         cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-    # Calculate and return output data
+    update_slots_in_db(data, slot_mapping)
+
     not_filled_spaces = total_spaces - filled_spaces
     output = {
         "Total spaces": total_spaces,
@@ -131,23 +116,41 @@ def process_detections(frame, results, confidence_threshold=0.3):
 
     return frame, output
 
-# API Endpoints
+def update_slots_in_db(data, slot_mapping):
+    conn, cur = connectDB()
+    if conn and cur:
+        try:
+            query = "INSERT INTO slots (slot_id, slot_status) VALUES (%s, %s) ON CONFLICT (slot_id) DO UPDATE SET slot_status = EXCLUDED.slot_status"
+            for idx, status in enumerate(data):
+                slot_id = slot_mapping.get(idx)
+                status = True if status == 1 else False
+                cur.execute(query, (slot_id, status))
+            conn.commit()
+            logger.info(f"Successfully inserted/updated {len(data)} records.")
+        except Exception as e:
+            logger.error(f"Error inserting/updating data: {e}")
+        finally:
+            cur.close()
+            conn.close()
+
 @app.get("/parking")
 async def startParkingDetection(bgTasks: BackgroundTasks) -> Dict:
     def parkingDetection() -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=FutureWarning)
-            cap = cv2.VideoCapture(0)
-            cap.set(3, 640)  # Set width
-            cap.set(4, 480)  # Set height
+           #  url = "http://192.168.1.4:4747/video"  uncomment it if you use droidcam and paste your link here
+            cap = cv2.VideoCapture(0) # default cam in device
+            cap.set(3, 640)
+            cap.set(4, 480)
             logger.info("Started parking slot detection...")
             start = time.time()
             timeout = 30
             parkData: Dict = {"Data": []}
-
-            # Set maximum runtime duration (timeout in seconds)
-            max_runtime = 30  # seconds
+            max_runtime = 30
             end_time = time.time() + max_runtime
+            rows = 2
+            columns = 3
+            slot_mapping = generate_slot_mapping(rows, columns)  # dynamic slot mapping
 
             while time.time() < end_time:
                 success, frame = cap.read()
@@ -161,29 +164,24 @@ async def startParkingDetection(bgTasks: BackgroundTasks) -> Dict:
                 except TypeError as e:
                     logger.error(f"Error during inference: {e}")
                     break
-
-                # Call the detection logic
-                frame_with_boxes, parkData = process_detections(frame, results)
-
-                # Log the parkData to check its content
+                frame_with_boxes, parkData = process_detections(frame, results, slot_mapping=slot_mapping)
                 logger.info(f"Park Data: {parkData}")
 
-                # Insert data continuously
                 if parkData["Data"]:
                     logger.info(f"Parking Data: {parkData}")
-                    conn = connectDB()
-                    if conn:
-                        cur = conn.cursor()
-                        query = "INSERT INTO slots (slot_status) VALUES (%s)"
+                    conn, cur = connectDB()
+                    if conn and cur:
+                        query = "INSERT INTO slots (slot_id, slot_status) VALUES (%s, %s) ON CONFLICT (slot_id) DO UPDATE SET slot_status = EXCLUDED.slot_status"
                         try:
-                            for status in parkData["Data"]:
+                            for idx, status in enumerate(parkData["Data"]):
+                                slot_id = slot_mapping.get(idx)
                                 # Convert 0 to False and 1 to True for database insertion
                                 status = True if status == 1 else False
-                                cur.execute(query, (status,))
-                            conn.commit()  # Ensure commit is triggered after all insertions
+                                cur.execute(query, (slot_id, status))
+                            conn.commit()
                             logger.info(f"Successfully inserted {len(parkData['Data'])} records.")
                         except Exception as e:
-                            logger.error(f"Error inserting data: {e}")
+                            logger.error(f"Error inserting/updating data: {e}")
                         finally:
                             cur.close()
                             conn.close()
@@ -196,19 +194,33 @@ async def startParkingDetection(bgTasks: BackgroundTasks) -> Dict:
 
 @app.get("/parkingData")
 async def getParkingData() -> Dict:
-    conn = connectDB()
-    if not conn:
+    conn, cur = connectDB()
+    if not conn or not cur:
         return {"error": "Failed to connect to the database"}
     try:
-        cur = conn.cursor()
         cur.execute("SELECT * FROM slots;")
         records = cur.fetchall()
         cur.close()
         conn.close()
-        slots = [{"slot_id": row[0], "slot_status": row[1], "timestamp": row[2]} for row in records]
+        slots = [{"slot_id": row[0], "slot_status": row[1]} for row in records]
         return {"slots": slots}
     except Exception as e:
         return {"error": str(e)}
+
+def cleardata():
+    conn, cur = connectDB()
+    if not conn or not cur:
+        logger.error("Failed to connect to the database during data clearing.")
+        return
+    try:
+        cur.execute("DELETE FROM slots;")
+        conn.commit()
+        logger.info("All slot data has been cleared from the database.")
+    except Exception as e:
+        logger.error(f"Error clearing data: {e}")
+    finally:
+        cur.close()
+        conn.close()
 
 Cleardata = True
 
