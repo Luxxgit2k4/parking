@@ -11,25 +11,27 @@ from fastapi import BackgroundTasks, FastAPI
 from dotenv import load_dotenv
 import os
 import time
-from typing import Any, Tuple, Dict
+from typing import Any, Dict
 
 load_dotenv()
 app = FastAPI()
 
+# Configure logger
 logger = logging.getLogger("logs")
 logger.setLevel(logging.DEBUG)
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 logger.addHandler(handler)
 
+# Define paths for YOLOv5 and model
 path = os.path.dirname(os.path.abspath(__file__))
-
 yolov5path = os.path.join(path, 'yolov5')
 modelpath = os.path.join(path, 'model', 'best.pt')
 
 logger.info(f"Found Yolov5 at: {yolov5path}")
 logger.info(f"Found the model at: {modelpath}")
 
+# Load YOLOv5 model
 logger.info("Loading the model...")
 model: Any = torch.hub.load(
     yolov5path,
@@ -37,12 +39,6 @@ model: Any = torch.hub.load(
     path=modelpath,
     source='local'
 )
-
-try:
-    _ = model.names
-except AttributeError:
-    logger.error("Error: Model does not have 'names' attribute. Check loading process.")
-    exit()
 
 def connectDB() -> Any:
     try:
@@ -68,104 +64,133 @@ def connectDB() -> Any:
         logger.error(f"Error connecting to database: {e}")
         return None
 
-
 def cleardata():
     conn = connectDB()
     if conn:
         try:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM slots;")
+            cur = conn.cursor()
+            cur.execute("DELETE FROM slots;")  # Deletes all data in the slots table
             conn.commit()
-            cursor.close()
-            logger.info("Clearing database...")
-        except Exception as kumar:
-            logger.error(f"Error clearing the database: {kumar}")
+            cur.close()
+            logger.info("Data cleared from 'slots' table.")
+        except Exception as e:
+            logger.error(f"Error while clearing data: {e}")
         finally:
             conn.close()
 
+# Check if the model is loaded correctly
+try:
+    _ = model.names
+except AttributeError:
+    logger.error("Error: Model does not have 'names' attribute. Check loading process.")
+    exit()
 
-def cropROI(frame: np.ndarray) -> Tuple[np.ndarray, int]:
-    height, width, _ = frame.shape
-    roi = frame[int(height * 0.5):height, 0:width]
-    return roi, int(height * 0.5)
-
-def processDetections(frame: np.ndarray, results: Any, threshold: float = 0.5) -> Tuple[np.ndarray, Dict]:
-    total = 0
-    filled = 0
+# Detection logic
+def process_detections(frame, results, confidence_threshold=0.3):
+    total_spaces = 0
+    filled_spaces = 0
     data = []
+
+    # Iterate over the detection results
     for result in results.xyxy[0]:
-        x1, y1, x2, y2, conf, cls = result.cpu().numpy()
-        if conf < threshold:
+        x1, y1, x2, y2, confidence, cls = result.cpu().numpy()
+
+        # Skip detections below the confidence threshold
+        if confidence < confidence_threshold:
             continue
+
         x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
         cls = int(cls)
-        w, h = x2 - x1, y2 - y1
-        if w < 50 or h < 50:
-            continue
-        ratio = w / h if h != 0 else 0
-        if not (1.5 < ratio < 5):
-            continue
+
+        # Determine slot status (empty or filled)
         if cls == 0:
-            total += 1
-            data.append(0)
-            color = (0, 0, 255)
+            total_spaces += 1
+            data.append(0)  # Empty space
+            color = (0, 0, 255)  # Red for empty spaces
         elif cls == 1:
-            total += 1
-            filled += 1
-            data.append(1)
-            color = (0, 255, 0)
+            total_spaces += 1
+            filled_spaces += 1
+            data.append(1)  # Filled space
+            color = (0, 255, 0)  # Green for occupied spaces
         else:
             continue
-        label = f"{model.names[cls]} {conf:.2f}"
+
+        # Label and draw the bounding box
+        label = f"{model.names[cls]} {confidence:.2f}"
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
         cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-    not_filled = total - filled
-    output = {"Total spaces": total, "Filled": filled, "Not Filled": not_filled, "Data": data}
+
+    # Calculate and return output data
+    not_filled_spaces = total_spaces - filled_spaces
+    output = {
+        "Total spaces": total_spaces,
+        "Filled": filled_spaces,
+        "Not Filled": not_filled_spaces,
+        "Data": data
+    }
+
     return frame, output
 
-def parkingDetection(bgTasks: BackgroundTasks) -> None:
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=FutureWarning)
-        cap = cv2.VideoCapture(0)
-        cap.set(3, 640)
-        cap.set(4, 480)
-        logger.info("Started parking slot detection...")
-        start = time.time()
-        timeout = 30
-        parkData: Dict = {"Data": []}
-        while True:
-            success, frame = cap.read()
-            if not success:
-                logger.error("Failed to grab frame")
-                break
-            roiFrame, yOff = cropROI(frame)
-            rgbFrame = cv2.cvtColor(roiFrame, cv2.COLOR_BGR2RGB)
-            try:
-                results = model(rgbFrame)
-            except TypeError as e:
-                logger.error(f"Error during inference: {e}")
-                break
-            processed, parkData = processDetections(roiFrame, results)
-            if parkData["Data"]:
-                logger.info(f"Parking Data: {parkData}")
-            if time.time() - start > timeout:
-                logger.info("Stopping parking slot detection due to timeout...")
-                break
-        cap.release()
-        if parkData["Data"]:
-            conn = connectDB()
-            if conn:
-                cur = conn.cursor()
-                query = "INSERT INTO slots (slot_status) VALUES (%s)"
-                for status in parkData["Data"]:
-                    cur.execute(query, (status,))
-                conn.commit()
-                cur.close()
-                conn.close()
-                logger.info("Parking data inserted into database.")
+# API Endpoints
 @app.get("/parking")
 async def startParkingDetection(bgTasks: BackgroundTasks) -> Dict:
-    bgTasks.add_task(parkingDetection, bgTasks)
+    def parkingDetection() -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=FutureWarning)
+            cap = cv2.VideoCapture(0)
+            cap.set(3, 640)  # Set width
+            cap.set(4, 480)  # Set height
+            logger.info("Started parking slot detection...")
+            start = time.time()
+            timeout = 30
+            parkData: Dict = {"Data": []}
+
+            # Set maximum runtime duration (timeout in seconds)
+            max_runtime = 30  # seconds
+            end_time = time.time() + max_runtime
+
+            while time.time() < end_time:
+                success, frame = cap.read()
+                if not success:
+                    logger.error("Failed to grab frame")
+                    break
+                rgbFrame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+                try:
+                    results = model(rgbFrame)
+                except TypeError as e:
+                    logger.error(f"Error during inference: {e}")
+                    break
+
+                # Call the detection logic
+                frame_with_boxes, parkData = process_detections(frame, results)
+
+                # Log the parkData to check its content
+                logger.info(f"Park Data: {parkData}")
+
+                # Insert data continuously
+                if parkData["Data"]:
+                    logger.info(f"Parking Data: {parkData}")
+                    conn = connectDB()
+                    if conn:
+                        cur = conn.cursor()
+                        query = "INSERT INTO slots (slot_status) VALUES (%s)"
+                        try:
+                            for status in parkData["Data"]:
+                                # Convert 0 to False and 1 to True for database insertion
+                                status = True if status == 1 else False
+                                cur.execute(query, (status,))
+                            conn.commit()  # Ensure commit is triggered after all insertions
+                            logger.info(f"Successfully inserted {len(parkData['Data'])} records.")
+                        except Exception as e:
+                            logger.error(f"Error inserting data: {e}")
+                        finally:
+                            cur.close()
+                            conn.close()
+
+            cap.release()
+
+    bgTasks.add_task(parkingDetection)
     logger.info("Started background task for parking slot detection.")
     return {"message": "Started parking slot detection..."}
 
