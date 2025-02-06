@@ -138,15 +138,15 @@ async def startParkingDetection(bgTasks: BackgroundTasks) -> Dict:
     def parkingDetection() -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=FutureWarning)
-           #  url = "http://192.168.1.4:4747/video"  uncomment it if you use droidcam and paste your link here
-            cap = cv2.VideoCapture(0) # default cam in device
+            url = "http://192.168.1.4:4747/video"  # uncomment it if you use droidcam and paste your link here
+            cap = cv2.VideoCapture(url) # default cam in device
             cap.set(3, 640)
             cap.set(4, 480)
             logger.info("Started parking slot detection...")
             start = time.time()
-            timeout = 30
+            timeout = 3000
             parkData: Dict = {"Data": []}
-            max_runtime = 30
+            max_runtime = 150
             end_time = time.time() + max_runtime
             rows = 2
             columns = 3
@@ -166,25 +166,25 @@ async def startParkingDetection(bgTasks: BackgroundTasks) -> Dict:
                     break
                 frame_with_boxes, parkData = process_detections(frame, results, slot_mapping=slot_mapping)
                 logger.info(f"Park Data: {parkData}")
+                logger.info(f"Inside park data: {parkData['Data']}")
 
-                if parkData["Data"]:
-                    logger.info(f"Parking Data: {parkData}")
-                    conn, cur = connectDB()
-                    if conn and cur:
-                        query = "INSERT INTO slots (slot_id, slot_status) VALUES (%s, %s) ON CONFLICT (slot_id) DO UPDATE SET slot_status = EXCLUDED.slot_status"
-                        try:
-                            for idx, status in enumerate(parkData["Data"]):
-                                slot_id = slot_mapping.get(idx)
-                                # Convert 0 to False and 1 to True for database insertion
-                                status = True if status == 1 else False
-                                cur.execute(query, (slot_id, status))
-                            conn.commit()
-                            logger.info(f"Successfully inserted {len(parkData['Data'])} records.")
-                        except Exception as e:
-                            logger.error(f"Error inserting/updating data: {e}")
-                        finally:
-                            cur.close()
-                            conn.close()
+                # if parkData["Data"]:
+                #     conn, cur = connectDB()
+                #     if conn and cur:
+                #         query = "INSERT INTO slots (slot_id, slot_status) VALUES (%s, %s) ON CONFLICT (slot_id) DO UPDATE SET slot_status = EXCLUDED.slot_status"
+                #         try:
+                #             for idx, status in enumerate(parkData["Data"]):
+                #                 slot_id = slot_mapping.get(idx)
+                #                 # Convert 0 to False and 1 to True for database insertion
+                #                 status = True if status == 1 else False
+                #                 cur.execute(query, (slot_id, status))
+                #             conn.commit()
+                #             logger.info(f"Successfully inserted {len(parkData['Data'])} records.")
+                #         except Exception as e:
+                #             logger.error(f"Error inserting/updating data: {e}")
+                #         finally:
+                #             cur.close()
+                #             conn.close()
 
             cap.release()
 
