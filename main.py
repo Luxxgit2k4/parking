@@ -109,8 +109,8 @@ def process_detections(frame, results, confidence_threshold=0.2, slot_mapping=No
     not_filled_spaces = total_spaces - filled_spaces
     output = {
         "Total spaces": total_spaces,
-        "Filled": filled_spaces,
-        "Not Filled": not_filled_spaces,
+        "Filled": not_filled_spaces,
+        "Not Filled": filled_spaces,
         "Data": data
     }
 
@@ -138,7 +138,7 @@ async def startParkingDetection(bgTasks: BackgroundTasks) -> Dict:
     def parkingDetection() -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=FutureWarning)
-            url = "http://192.168.1.4:4747/video"  # uncomment it if you use droidcam and paste your link here
+            url = "http://192.168.1.2:4747/video"  # uncomment it if you use droidcam and paste your link here
             cap = cv2.VideoCapture(url) # default cam in device
             cap.set(3, 640)
             cap.set(4, 480)
@@ -198,7 +198,7 @@ async def getParkingData() -> Dict:
     if not conn or not cur:
         return {"error": "Failed to connect to the database"}
     try:
-        cur.execute("SELECT * FROM slots;")
+        cur.execute("SELECT * FROM slots ORDER By slot_id;")
         records = cur.fetchall()
         cur.close()
         conn.close()
@@ -222,7 +222,7 @@ def cleardata():
         cur.close()
         conn.close()
 
-Cleardata = True
+Cleardata = False
 
 if __name__ == "__main__":
     if Cleardata:
