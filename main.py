@@ -105,6 +105,7 @@ def process_detections(frame, results, confidence_threshold=0.3, slot_mapping=No
         label = f"{model.names[cls]} {confidence:.2f}"
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
         cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        # print(f"Detected class: {cls}, Total: {total_spaces}, Filled: {filled_spaces}, Empty: {empty_spaces}")   # For debugging
 
     update_slots_in_db(data, slot_mapping)
     output = {
