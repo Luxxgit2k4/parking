@@ -76,9 +76,10 @@ except AttributeError:
     logger.error("Error: Model does not have 'names' attribute. Check loading process.")
     exit()
 
-def process_detections(frame, results, confidence_threshold=0.2, slot_mapping=None):
+def process_detections(frame, results, confidence_threshold=0.3, slot_mapping=None):
     total_spaces = 0   # threshold increase panna accuracy erum but leave it as it is
     filled_spaces = 0
+    empty_spaces = 0
     data = []
     for result in results.xyxy[0]:
         x1, y1, x2, y2, confidence, cls = result.cpu().numpy()
@@ -89,13 +90,14 @@ def process_detections(frame, results, confidence_threshold=0.2, slot_mapping=No
         cls = int(cls)
         if cls == 0:
             total_spaces += 1
-            data.append(0)  # Empty space
-            color = (0, 0, 255)  # Red for empty spaces
+            filled_spaces +=1
+            data.append(1)
+            color = (0, 0, 255)  # Red for filled spaces
         elif cls == 1:
             total_spaces += 1
-            filled_spaces += 1
-            data.append(1)  # Filled space
-            color = (0, 255, 0)  # Green for occupied spaces
+            empty_spaces += 1
+            data.append(0)
+            color = (0, 255, 0)  # Green for empty spaces
         else:
             continue
 
@@ -105,12 +107,10 @@ def process_detections(frame, results, confidence_threshold=0.2, slot_mapping=No
         cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
     update_slots_in_db(data, slot_mapping)
-
-    not_filled_spaces = total_spaces - filled_spaces
     output = {
         "Total spaces": total_spaces,
-        "Filled": not_filled_spaces,
-        "Not Filled": filled_spaces,
+        "Filled": filled_spaces,
+        "Empty": empty_spaces,
         "Data": data
     }
 
@@ -138,8 +138,8 @@ async def startParkingDetection(bgTasks: BackgroundTasks) -> Dict:
     def parkingDetection() -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=FutureWarning)
-           # url = "http://192.168.1.2:4747/video"  # uncomment it if you use droidcam and paste your link here
-            cap = cv2.VideoCapture(0) # default cam in device
+            url = "http://192.168.1.3:4747/video"  # uncomment it if you use droidcam and paste your link here
+            cap = cv2.VideoCapture(url) # default cam in device
             cap.set(3, 640)
             cap.set(4, 480)
             logger.info("Started parking slot detection...")
