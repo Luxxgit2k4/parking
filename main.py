@@ -76,7 +76,7 @@ except AttributeError:
     logger.error("Error: Model does not have 'names' attribute. Check loading process.")
     exit()
 
-def process_detections(frame, results, confidence_threshold=0.3, slot_mapping=None):
+def process_detections(frame, results, confidence_threshold=0.4, slot_mapping=None):
     total_spaces = 0   # threshold increase panna accuracy erum but leave it as it is
     filled_spaces = 0
     empty_spaces = 0
@@ -84,6 +84,7 @@ def process_detections(frame, results, confidence_threshold=0.3, slot_mapping=No
     for result in results.xyxy[0]:
         x1, y1, x2, y2, confidence, cls = result.cpu().numpy()
         if confidence < confidence_threshold: # skips detection if threshold is less
+            logger.info("Skipping detection as the confidence is low...")
             continue
 
         x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
@@ -121,10 +122,6 @@ def update_slots_in_db(data, slot_mapping):
     conn, cur = connectDB()
     if conn and cur:
         try:
-
-            cur.execute("DELETE FROM slots")
-            conn.commit()
-
             query = "INSERT INTO slots (slot_id, slot_status) VALUES (%s, %s) ON CONFLICT (slot_id) DO UPDATE SET slot_status = EXCLUDED.slot_status"
             for idx, status in enumerate(data):
                 slot_id = slot_mapping.get(idx)
