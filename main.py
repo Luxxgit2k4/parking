@@ -121,6 +121,10 @@ def update_slots_in_db(data, slot_mapping):
     conn, cur = connectDB()
     if conn and cur:
         try:
+
+            cur.execute("DELETE FROM slots")
+            conn.commit()
+
             query = "INSERT INTO slots (slot_id, slot_status) VALUES (%s, %s) ON CONFLICT (slot_id) DO UPDATE SET slot_status = EXCLUDED.slot_status"
             for idx, status in enumerate(data):
                 slot_id = slot_mapping.get(idx)
