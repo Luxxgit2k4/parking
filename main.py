@@ -138,8 +138,8 @@ async def startParkingDetection(bgTasks: BackgroundTasks) -> Dict:
     def parkingDetection() -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=FutureWarning)
-            url = "http://192.168.1.2:4747/video"  # uncomment it if you use droidcam and paste your link here
-            cap = cv2.VideoCapture(url) # default cam in device
+           # url = "http://192.168.1.2:4747/video"  # uncomment it if you use droidcam and paste your link here
+            cap = cv2.VideoCapture(0) # default cam in device
             cap.set(3, 640)
             cap.set(4, 480)
             logger.info("Started parking slot detection...")

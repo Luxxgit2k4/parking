@@ -19,6 +19,7 @@ else:
 def process_detections(frame, results, confidence_threshold=0.3):
     total_spaces = 0
     filled_spaces = 0
+    empty_spaces = 0
     data = []
 
     for result in results.xyxy[0]:
@@ -29,16 +30,18 @@ def process_detections(frame, results, confidence_threshold=0.3):
 
         x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
         cls = int(cls)
+        print(f"Detected class: {cls}, Confidence: {confidence}")
 
         if cls == 0:
             total_spaces += 1
-            data.append(0)
-            color = (0, 0, 255)  # Red for empty spaces
+            filled_spaces +=1
+            data.append(1)
+            color = (0, 0, 255)  # Red for filled spaces
         elif cls == 1:
             total_spaces += 1
-            filled_spaces += 1
-            data.append(1)
-            color = (0, 255, 0)  # Green for occupied spaces
+            empty_spaces += 1
+            data.append(0)
+            color = (0, 255, 0)  # Green for empty spaces
         else:
             continue
 
@@ -46,16 +49,15 @@ def process_detections(frame, results, confidence_threshold=0.3):
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
         cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-    not_filled_spaces = total_spaces - filled_spaces
     output = {
         "Total spaces": total_spaces,
         "Filled": filled_spaces,
-        "Not Filled": not_filled_spaces,
+        "Empty": empty_spaces,
         "Data": data
     }
 
     return frame, output
-url = "http://192.168.1.4:4747/video"
+url = "http://192.168.1.3:4747/video"
 cap = cv2.VideoCapture(url)
 
 if not cap.isOpened():
