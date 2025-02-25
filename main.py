@@ -61,7 +61,8 @@ def connectDB() -> Any:   #inga dhaan database connect panrom
         cur.execute("""
             CREATE TABLE IF NOT EXISTS slots (
                 slot_id VARCHAR(10) PRIMARY KEY,
-                slot_status BOOLEAN
+                slot_status BOOLEAN,
+                is_booked BOOLEAN DEFAULT FALSE
             );
         """)
         logger.info("Table 'slots' created or already exists.")
@@ -213,7 +214,7 @@ async def getParkingData() -> Dict:
         records = cur.fetchall()
         cur.close()
         conn.close()
-        slots = [{"slot_id": row[0], "slot_status": row[1]} for row in records]
+        slots = [{"slot_id": row[0], "slot_status": row[1], "timestamp":row[2], "is_booked":row[3]} for row in records]
         return {"slots": slots}
     except Exception as e:
         return {"error": str(e)}
