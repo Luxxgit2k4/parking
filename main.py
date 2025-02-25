@@ -8,6 +8,7 @@ import numpy as np
 import psycopg2
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 import time
@@ -15,6 +16,14 @@ from typing import Any, Dict
 
 load_dotenv()
 app = FastAPI()
+
+app.add_middleware(      # middleware to avoid the cors issue from frontend fetching
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        )
 
 
 logger = logging.getLogger("logs") # idhu vandhu logging ku da
