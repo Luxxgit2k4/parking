@@ -219,6 +219,31 @@ async def getParkingData() -> Dict:
     except Exception as e:
         return {"error": str(e)}
 
+@app.put("/parkingData/{slot_id}/bookslot")
+async def update_booking_status(slot_id: str, is_booked: bool):
+    conn, cur = connectDB()
+    if not conn or not cur:
+        return {"error": "Failed to connect to the database"}
+
+    try:
+        cur.execute(
+            """
+            UPDATE slots
+            SET is_booked = %s
+            WHERE slot_id = %s
+            """,
+            (is_booked, slot_id),
+        )
+        conn.commit()
+        return {"message": f"Booking status for Slot {slot_id} updated successfully"}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+    finally:
+        cur.close()
+        conn.close()
+
 def cleardata():
     conn, cur = connectDB()
     if not conn or not cur:
