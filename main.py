@@ -9,10 +9,12 @@ import psycopg2
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
 import time
 from typing import Any, Dict
+
 
 load_dotenv()
 app = FastAPI()
@@ -219,8 +221,11 @@ async def getParkingData() -> Dict:
     except Exception as e:
         return {"error": str(e)}
 
+class UpdateBooking(BaseModel):
+        is_booked: bool
+
 @app.put("/parkingData/{slot_id}/bookslot")
-async def update_booking_status(slot_id: str, is_booked: bool):
+async def update_booking_status(slot_id: str, booking_update: UpdateBooking):
     conn, cur = connectDB()
     if not conn or not cur:
         return {"error": "Failed to connect to the database"}
@@ -232,7 +237,7 @@ async def update_booking_status(slot_id: str, is_booked: bool):
             SET is_booked = %s
             WHERE slot_id = %s
             """,
-            (is_booked, slot_id),
+            (booking_update.is_booked, slot_id),
         )
         conn.commit()
         return {"message": f"Booking status for Slot {slot_id} updated successfully"}
